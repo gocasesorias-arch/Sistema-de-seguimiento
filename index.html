@@ -47,38 +47,15 @@
 
   <div class="container my-4">
     <div class="row g-3">
-      <div class="col-12">
+      <!-- Indicador de carga -->
+      <div class="col-12" id="loadingIndicator">
         <div class="card card-soft">
-          <div class="card-body">
-            <h5 class="card-title mb-3">Conectar a tus datos (JSON / API)</h5>
-            <div class="row g-3 align-items-end">
-              <div class="col-md-5">
-                <label class="form-label">URL Plan de Capacitación (plan.json)</label>
-                <input id="planUrl" class="form-control" placeholder="./Plan%20de%20capacitacion.json">
-                <div class="form-hint">Ej: URL crudo de GitHub o archivo en misma carpeta.</div>
-              </div>
-              <div class="col-md-5">
-                <label class="form-label">URL Participantes (participantes.json)</label>
-                <input id="partUrl" class="form-control" placeholder="./Participantes.json">
-                <div class="form-hint">Ej: URL crudo de GitHub o archivo en misma carpeta.</div>
-              </div>
-              <div class="col-md-2 d-grid">
-                <button id="btnCargar" class="btn btn-success">Cargar</button>
-              </div>
+          <div class="card-body text-center py-4">
+            <div class="spinner-border text-success mb-3" role="status">
+              <span class="visually-hidden">Cargando...</span>
             </div>
-            <div class="row g-3 mt-3">
-              <div class="col-md-6">
-                <label class="form-label">O sube Plan (JSON)</label>
-                <input type="file" id="planFile" accept="application/json" class="form-control">
-              </div>
-              <div class="col-md-6">
-                <label class="form-label">O sube Participantes (JSON)</label>
-                <input type="file" id="partFile" accept="application/json" class="form-control">
-              </div>
-            </div>
-            <div class="mt-3 small text-muted">
-              Sugerencia: publica ambos JSON en tu repositorio y referencia sus URLs crudas para GitHub Pages.
-            </div>
+            <h5 class="mb-2">Cargando datos desde GitHub...</h5>
+            <p class="text-muted small mb-0">Obteniendo información de capacitaciones y participantes</p>
           </div>
         </div>
       </div>
@@ -428,20 +405,6 @@
       return await res.json();
     }
 
-    function loadLocalFile(input){
-      return new Promise((resolve,reject)=>{
-        const f = input.files?.[0];
-        if (!f) return resolve(null);
-        const reader = new FileReader();
-        reader.onload = () => {
-          try{ resolve(JSON.parse(reader.result)); }
-          catch(err){ reject(err); }
-        };
-        reader.onerror = () => reject(reader.error);
-        reader.readAsText(f);
-      });
-    }
-
     function normalizeArray(a){
       if (!Array.isArray(a)) return [];
       // A veces vienen objetos con claves raras (pivots); intentamos aplanar si detectamos estructura key:value única
@@ -451,25 +414,44 @@
 
     async function cargar(){
       try{
-        // 1) Intenta por URL
+        // URLs fijas desde GitHub main branch
+        const pUrl = 'https://raw.githubusercontent.com/gocasesorias-arch/Sistema-de-seguimiento/main/Plan%20de%20capacitacion.json';
+        const sUrl = 'https://raw.githubusercontent.com/gocasesorias-arch/Sistema-de-seguimiento/main/Participantes.json';
+
+        // Cargar datos desde GitHub
         let plan = null, part = null;
-        const pUrl = el('planUrl').value.trim();
-        const sUrl = el('partUrl').value.trim();
         if (pUrl) { try{ plan = await fetchJSONMaybe(pUrl); }catch(e){ console.warn('Plan por URL falló', e);} }
         if (sUrl) { try{ part = await fetchJSONMaybe(sUrl); }catch(e){ console.warn('Participantes por URL falló', e);} }
 
-        // 2) Fallback a archivos locales subidos
-        if (!plan){ plan = await loadLocalFile(el('planFile')); }
-        if (!part){ part = await loadLocalFile(el('partFile')); }
-
-        if (!part) throw new Error('No se pudo cargar "Participantes". Sube el archivo o define una URL.');
+        if (!part) throw new Error('No se pudo cargar "Participantes" desde GitHub.');
         DATA_PART = normalizeArray(part);
         DATA_PLAN = normalizeArray(plan||[]);
+
+        // Ocultar indicador de carga
+        const indicator = el('loadingIndicator');
+        if (indicator) indicator.style.display = 'none';
 
         // Autodetectar mapeo con la nueva data
         applyMapping(true);
       }catch(err){
-        alert(err.message);
+        // Mostrar error en el indicador de carga
+        const indicator = el('loadingIndicator');
+        if (indicator) {
+          indicator.innerHTML = `
+            <div class="card card-soft">
+              <div class="card-body text-center py-4">
+                <div class="text-danger mb-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="currentColor" class="bi bi-exclamation-triangle" viewBox="0 0 16 16">
+                    <path d="M7.938 2.016A.13.13 0 0 1 8.002 2a.13.13 0 0 1 .063.016.146.146 0 0 1 .054.057l6.857 11.667c.036.06.035.124.002.183a.163.163 0 0 1-.054.06.116.116 0 0 1-.066.017H1.146a.115.115 0 0 1-.066-.017.163.163 0 0 1-.054-.06.176.176 0 0 1 .002-.183L7.884 2.073a.147.147 0 0 1 .054-.057zm1.044-.45a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566z"/>
+                    <path d="M7.002 12a1 1 0 1 1 2 0 1 1 0 0 1-2 0zM7.1 5.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995z"/>
+                  </svg>
+                </div>
+                <h5 class="mb-2 text-danger">Error al cargar datos</h5>
+                <p class="text-muted small mb-0">${err.message}</p>
+              </div>
+            </div>
+          `;
+        }
         console.error(err);
       }
     }
@@ -491,15 +473,13 @@
     }
 
     // Eventos
-    el('btnCargar').addEventListener('click', cargar);
     el('btnAplicar').addEventListener('click', ()=>applyMapping(false));
     el('btnReset').addEventListener('click', ()=>{ MAP={curso:null,rut:null,estado:null,fecha:null}; applyMapping(true); });
     el('txtBuscar').addEventListener('input', ()=>renderTabla());
     el('btnExport').addEventListener('click', exportCSV);
 
-    // Valores por defecto (cargando desde GitHub main branch)
-    el('planUrl').value = 'https://raw.githubusercontent.com/gocasesorias-arch/Sistema-de-seguimiento/main/Plan%20de%20capacitacion.json';
-    el('partUrl').value = 'https://raw.githubusercontent.com/gocasesorias-arch/Sistema-de-seguimiento/main/Participantes.json';
+    // Cargar datos automáticamente al iniciar
+    window.addEventListener('DOMContentLoaded', cargar);
   </script>
 </body>
 </html>
