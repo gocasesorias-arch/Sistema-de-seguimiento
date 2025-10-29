@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Seguimiento de Capacitaciones — Adaptado a Bases de Datos</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root{
+      --primary:#275317;
+      --secondary:#3b7d23;
+      --accent:#E87722;
+      --info:#0dcaf0;
+      --warning:#ffc107;
+      --danger:#dc3545;
+      --light:#f8f9fa;
+      --dark:#212529;
+    }
+    body{background:#f5f7f8}
+    .navbar{background:var(--primary)}
+    .kpi-card{border:0; border-radius:16px; box-shadow:0 6px 18px rgba(0,0,0,.08)}
+    .kpi-value{font-size:1.9rem; font-weight:800}
+    .chip{border-radius:20px; padding:.25rem .6rem; font-size:.8rem}
+    .kanban-col{background:#fff; border-radius:12px; padding:12px; min-height:420px; box-shadow:0 6px 18px rgba(0,0,0,.06)}
+    .kanban-card{border:1px solid #eee; border-radius:10px; padding:10px; margin-bottom:8px}
+    .status-dot{display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:.4rem}
+    .dot-P{background:var(--info)} .dot-PL{background:var(--warning)} .dot-EP{background:var(--accent)}
+    .dot-PR{background:#0d6efd} .dot-C{background:#20c997)} .dot-VIGENTE{background:#20c997} .dot-VENCIDA{background:var(--danger)}
+    .card-soft{border:0; border-radius:16px; box-shadow:0 6px 18px rgba(0,0,0,.08)}
+    .form-hint{font-size:.85rem; color:#6c757d}
+    .table-sticky thead th { position: sticky; top: 0; background: #fff; z-index: 1; }
+    .small{font-size:.875rem}
+    .pointer{cursor:pointer}
+  </style>
+</head>
+<body>
+  <nav class="navbar navbar-dark">
+    <div class="container-fluid">
+      <span class="navbar-brand fw-bold">Seguimiento de Capacitaciones — DB-ready</span>
+      <div class="d-flex gap-2">
+        <button id="btnExport" class="btn btn-light btn-sm">Exportar CSV</button>
+        <a class="btn btn-outline-light btn-sm" href="#mapeo">Mapeo de Campos</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container my-4">
+    <div class="row g-3">
+      <div class="col-12">
+        <div class="card card-soft">
+          <div class="card-body">
+            <h5 class="card-title mb-3">Conectar a tus datos (JSON / API)</h5>
+            <div class="row g-3 align-items-end">
+              <div class="col-md-5">
+                <label class="form-label">URL Plan de Capacitación (plan.json)</label>
+                <input id="planUrl" class="form-control" placeholder="./Plan%20de%20capacitacion.json">
+                <div class="form-hint">Ej: URL crudo de GitHub o archivo en misma carpeta.</div>
+              </div>
+              <div class="col-md-5">
+                <label class="form-label">URL Participantes (participantes.json)</label>
+                <input id="partUrl" class="form-control" placeholder="./Participantes.json">
+                <div class="form-hint">Ej: URL crudo de GitHub o archivo en misma carpeta.</div>
+              </div>
+              <div class="col-md-2 d-grid">
+                <button id="btnCargar" class="btn btn-success">Cargar</button>
+              </div>
+            </div>
+            <div class="row g-3 mt-3">
+              <div class="col-md-6">
+                <label class="form-label">O sube Plan (JSON)</label>
+                <input type="file" id="planFile" accept="application/json" class="form-control">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">O sube Participantes (JSON)</label>
+                <input type="file" id="partFile" accept="application/json" class="form-control">
+              </div>
+            </div>
+            <div class="mt-3 small text-muted">
+              Sugerencia: publica ambos JSON en tu repositorio y referencia sus URLs crudas para GitHub Pages.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- KPIs -->
+      <div class="col-md-3">
+        <div class="card kpi-card">
+          <div class="card-body">
+            <div class="text-muted">Participaciones</div>
+            <div id="kpiParticipaciones" class="kpi-value">—</div>
+            <div class="small">Total de registros en Participantes</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card kpi-card">
+          <div class="card-body">
+            <div class="text-muted">Personas únicas</div>
+            <div id="kpiPersonas" class="kpi-value">—</div>
+            <div class="small">Distinct por Rut</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card kpi-card">
+          <div class="card-body">
+            <div class="text-muted">Cursos únicos</div>
+            <div id="kpiCursos" class="kpi-value">—</div>
+            <div class="small">Distinct por NombreCurso</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card kpi-card">
+          <div class="card-body">
+            <div class="text-muted">Inversión Total (Plan)</div>
+            <div id="kpiInversion" class="kpi-value">—</div>
+            <div class="small">Suma estimada desde Plan</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="col-lg-6">
+        <div class="card card-soft">
+          <div class="card-body">
+            <div class="d-flex justify-content-between">
+              <h6 class="mb-3">Distribución por Estado</h6>
+              <span class="chip bg-light text-muted" id="hintEstado">Usando campo: —</span>
+            </div>
+            <canvas id="chartEstado" height="220"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="card card-soft">
+          <div class="card-body">
+            <div class="d-flex justify-content-between">
+              <h6 class="mb-3">Top 10 Cursos por Participaciones</h6>
+              <span class="chip bg-light text-muted" id="hintCurso">Usando campo: —</span>
+            </div>
+            <canvas id="chartCursos" height="220"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabla rápida -->
+      <div class="col-12">
+        <div class="card card-soft">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="mb-0">Muestra de Participantes</h6>
+              <input id="txtBuscar" class="form-control form-control-sm" placeholder="Buscar… (curso, rut, estado)" style="max-width:260px">
+            </div>
+            <div class="table-responsive table-sticky" style="max-height:360px">
+              <table class="table table-sm align-middle">
+                <thead id="thead"></thead>
+                <tbody id="tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Kanban -->
+      <div class="col-12">
+        <div class="card card-soft">
+          <div class="card-body">
+            <h5 class="mb-3">Tablero Kanban (si existe Estado)</h5>
+            <div class="row g-3" id="kanbanRow">
+              <div class="col-md-2"><div class="kanban-col"><h6><span class="status-dot dot-P"></span>P</h6><div id="colP"></div></div></div>
+              <div class="col-md-2"><div class="kanban-col"><h6><span class="status-dot dot-PL"></span>PL</h6><div id="colPL"></div></div></div>
+              <div class="col-md-2"><div class="kanban-col"><h6><span class="status-dot dot-EP"></span>EP</h6><div id="colEP"></div></div></div>
+              <div class="col-md-3"><div class="kanban-col"><h6><span class="status-dot dot-PR"></span>PR</h6><div id="colPR"></div></div></div>
+              <div class="col-md-3"><div class="kanban-col"><h6><span class="status-dot dot-VIGENTE"></span>C</h6><div id="colC"></div></div></div>
+            </div>
+            <div class="small text-muted mt-2">Si tus estados usan otros nombres, ajusta el mapeo abajo.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mapeo -->
+      <div class="col-12" id="mapeo">
+        <div class="card card-soft">
+          <div class="card-body">
+            <h5 class="mb-3">Mapeo de Campos</h5>
+            <div class="row g-3">
+              <div class="col-md-3">
+                <label class="form-label">Campo Curso</label>
+                <input id="mapCurso" class="form-control" placeholder="NombreCurso">
+                <div class="form-hint">Ej: "NombreCurso" o "Curso".</div>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Campo Rut</label>
+                <input id="mapRut" class="form-control" placeholder="RutCompleto">
+                <div class="form-hint">Identificador de persona.</div>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Campo Estado</label>
+                <input id="mapEstado" class="form-control" placeholder="Estado">
+                <div class="form-hint">Ej: P, PL, EP, PR, C, Vigente, Vencida.</div>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Campo Fecha/Mes</label>
+                <input id="mapFecha" class="form-control" placeholder="Fecha | Mes | Mes Inicio">
+                <div class="form-hint">Para series de tiempo (opcional).</div>
+              </div>
+            </div>
+            <div class="mt-3 d-flex gap-2">
+              <button id="btnAplicar" class="btn btn-primary">Aplicar mapeo</button>
+              <button id="btnReset" class="btn btn-outline-secondary">Restablecer</button>
+            </div>
+            <div class="mt-2 small text-muted">El sistema intenta detectar columnas automáticamente si dejas campos vacíos.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Helpers
+    const normKey = (s) => String(s||'').trim().toLowerCase().replace(/\s+/g,' ').replace(/[^\p{L}\p{N}\s_#\-\/.]/gu,'');
+    const normVal = (v) => typeof v === 'string' ? v.trim() : v;
+    const dineroToNumber = (s) => {
+      if (s==null) return 0;
+      if (typeof s==='number') return s;
+      const t=String(s).replace(/\./g,'').replace(/\s/g,'').replace(/\$/g,'').replace(/,/g,'');
+      const n=parseFloat(t);
+      return isNaN(n)?0:n;
+    };
+    const guessField = (keys, candidates) => {
+      const nk = keys.map(k=>({raw:k, n:normKey(k)}));
+      for (const c of candidates){
+        const nc = normKey(c);
+        const hit = nk.find(k=>k.n===nc);
+        if (hit) return hit.raw;
+      }
+      // contains matches
+      for (const c of candidates){
+        const nc = normKey(c);
+        const hit = nk.find(k=>k.n.includes(nc));
+        if (hit) return hit.raw;
+      }
+      return null;
+    };
+
+    let DATA_PLAN = [];
+    let DATA_PART = [];
+    let MAP = { curso:null, rut:null, estado:null, fecha:null };
+
+    // UI elements
+    const el = (id)=>document.getElementById(id);
+    const kpiParticipaciones = el('kpiParticipaciones');
+    const kpiPersonas = el('kpiPersonas');
+    const kpiCursos = el('kpiCursos');
+    const kpiInversion = el('kpiInversion');
+    const hintEstado = el('hintEstado');
+    const hintCurso = el('hintCurso');
+
+    // Charts
+    let chartEstado=null, chartCursos=null;
+
+    function setKPIs(){
+      // Participaciones = registros en participantes
+      const totalPart = DATA_PART.length;
+      kpiParticipaciones.textContent = Intl.NumberFormat('es-CL').format(totalPart);
+
+      // Personas únicas por Rut
+      const rutField = MAP.rut;
+      const personas = new Set();
+      if (rutField){
+        for (const r of DATA_PART){
+          const val = normVal(r[rutField]);
+          if (val!==undefined && val!=='') personas.add(String(val));
+        }
+      }
+      kpiPersonas.textContent = rutField ? personas.size : '—';
+
+      // Cursos únicos
+      const cursoField = MAP.curso;
+      const cursos = new Set();
+      if (cursoField){
+        for (const r of DATA_PART){
+          const val = normVal(r[cursoField]);
+          if (val!==undefined && val!=='') cursos.add(String(val));
+        }
+      }
+      kpiCursos.textContent = cursoField ? cursos.size : '—';
+
+      // Inversión total estimada (Plan): busca columnas que parezcan montos
+      let total = 0;
+      if (DATA_PLAN.length){
+        const keys = Object.keys(DATA_PLAN[0]||{});
+        const moneyKeys = keys.filter(k=>/\$|monto|valor|inversi/i.test(k));
+        if (moneyKeys.length){
+          for (const row of DATA_PLAN){
+            for (const mk of moneyKeys){
+              total += dineroToNumber(row[mk]);
+            }
+          }
+        }
+      }
+      kpiInversion.textContent = total ? '$ ' + Intl.NumberFormat('es-CL').format(total) : '—';
+    }
+
+    function drawEstado(){
+      const estadoField = MAP.estado;
+      hintEstado.textContent = 'Usando campo: ' + (estadoField || '—');
+      if (!estadoField){ if (chartEstado) chartEstado.destroy(); return; }
+      const counts = new Map();
+      for (const r of DATA_PART){
+        let e = String(r[estadoField]??'').trim().toUpperCase();
+        // normaliza vocabulario frecuente
+        if (e==='VENCIDA' || e==='VENCIDO') e='VENCIDA';
+        if (e==='VIGENTE' || e==='VIGENTES') e='VIGENTE';
+        counts.set(e, (counts.get(e)||0)+1);
+      }
+      const labels = Array.from(counts.keys());
+      const data = labels.map(l=>counts.get(l));
+
+      if (chartEstado) chartEstado.destroy();
+      const ctx = document.getElementById('chartEstado');
+      chartEstado = new Chart(ctx, {
+        type:'doughnut',
+        data:{ labels, datasets:[{ data }] },
+        options:{ plugins:{ legend:{ position:'bottom' } } }
+      });
+    }
+
+    function drawCursosTop(){
+      const cursoField = MAP.curso;
+      hintCurso.textContent = 'Usando campo: ' + (cursoField || '—');
+      if (!cursoField){ if (chartCursos) chartCursos.destroy(); return; }
+      const counts = new Map();
+      for (const r of DATA_PART){
+        const c = String(r[cursoField]??'').trim();
+        if(!c) continue;
+        counts.set(c, (counts.get(c)||0)+1);
+      }
+      const entries = Array.from(counts.entries()).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      const labels = entries.map(e=>e[0]);
+      const data = entries.map(e=>e[1]);
+      if (chartCursos) chartCursos.destroy();
+      const ctx = document.getElementById('chartCursos');
+      chartCursos = new Chart(ctx, {
+        type:'bar',
+        data:{ labels, datasets:[{ label:'Participaciones', data }]},
+        options:{
+          scales:{ y:{ beginAtZero:true } },
+          plugins:{ legend:{ display:false } }
+        }
+      });
+    }
+
+    function renderTabla(sample=250){
+      const tbody = el('tbody'); const thead = el('thead');
+      tbody.innerHTML=''; thead.innerHTML='';
+      if(!DATA_PART.length) return;
+      const cols = Object.keys(DATA_PART[0]);
+      // header
+      const trh = document.createElement('tr');
+      for (const c of cols){ const th=document.createElement('th'); th.textContent=c; trh.appendChild(th); }
+      thead.appendChild(trh);
+      // body (sample)
+      const filt = normKey(el('txtBuscar').value||'');
+      let shown=0;
+      for (const row of DATA_PART){
+        if (shown>=sample) break;
+        const matchStr = cols.map(k=>String(row[k]??'')).join(' ').toLowerCase();
+        if (filt && !matchStr.includes(filt)) continue;
+        const tr=document.createElement('tr');
+        for (const c of cols){ const td=document.createElement('td'); td.textContent=row[c]; tr.appendChild(td); }
+        tbody.appendChild(tr); shown++;
+      }
+    }
+
+    function renderKanban(){
+      const estadoField = MAP.estado;
+      const cols = {P:'colP', PL:'colPL', EP:'colEP', PR:'colPR', C:'colC'};
+      for (const k in cols) el(cols[k]).innerHTML='';
+      if (!estadoField) return;
+      const cursoField = MAP.curso || guessField(Object.keys(DATA_PART[0]||{}), ['NombreCurso','Curso']);
+      for (const r of DATA_PART){
+        let e = String(r[estadoField]??'').trim().toUpperCase();
+        if (e==='VIGENTE') e='C'; // trata vigente como certificado
+        const target = cols[e];
+        if (!target) continue;
+        const card = document.createElement('div');
+        card.className='kanban-card';
+        const title = (r[cursoField]??'—');
+        const rut = MAP.rut ? (r[MAP.rut]??'') : '';
+        card.innerHTML = `<div class="fw-semibold">${title}</div><div class="text-muted small">${rut}</div>`;
+        el(target).appendChild(card);
+      }
+    }
+
+    function applyMapping(auto=false){
+      const keys = Object.keys(DATA_PART[0]||{});
+      // Auto guess if empty
+      if (auto){
+        MAP.curso = guessField(keys, ['NombreCurso','Curso','Nombre del Curso','CursoNombre']) || MAP.curso;
+        MAP.rut = guessField(keys, ['RutCompleto','RUT','Rut','RUN','Identificador']) || MAP.rut;
+        MAP.estado = guessField(keys, ['Estado','Estatus','Situacion','Condicion']) || MAP.estado;
+        MAP.fecha = guessField(keys, ['Fecha','Mes','Mes Inicio','FechaCurso','FechaInicio']) || MAP.fecha;
+      } else {
+        MAP.curso = el('mapCurso').value || MAP.curso;
+        MAP.rut = el('mapRut').value || MAP.rut;
+        MAP.estado = el('mapEstado').value || MAP.estado;
+        MAP.fecha = el('mapFecha').value || MAP.fecha;
+      }
+      // Espejo en inputs
+      el('mapCurso').value = MAP.curso || '';
+      el('mapRut').value = MAP.rut || '';
+      el('mapEstado').value = MAP.estado || '';
+      el('mapFecha').value = MAP.fecha || '';
+
+      setKPIs();
+      drawEstado();
+      drawCursosTop();
+      renderTabla();
+      renderKanban();
+    }
+
+    async function fetchJSONMaybe(url){
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('No se pudo cargar: '+url);
+      return await res.json();
+    }
+
+    function loadLocalFile(input){
+      return new Promise((resolve,reject)=>{
+        const f = input.files?.[0];
+        if (!f) return resolve(null);
+        const reader = new FileReader();
+        reader.onload = () => {
+          try{ resolve(JSON.parse(reader.result)); }
+          catch(err){ reject(err); }
+        };
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(f);
+      });
+    }
+
+    function normalizeArray(a){
+      if (!Array.isArray(a)) return [];
+      // A veces vienen objetos con claves raras (pivots); intentamos aplanar si detectamos estructura key:value única
+      // Aquí preferimos dejar tal cual y que el usuario ajuste mapeo.
+      return a.map(r=>r && typeof r==='object' ? r : ({valor:r}));
+    }
+
+    async function cargar(){
+      try{
+        // 1) Intenta por URL
+        let plan = null, part = null;
+        const pUrl = el('planUrl').value.trim();
+        const sUrl = el('partUrl').value.trim();
+        if (pUrl) { try{ plan = await fetchJSONMaybe(pUrl); }catch(e){ console.warn('Plan por URL falló', e);} }
+        if (sUrl) { try{ part = await fetchJSONMaybe(sUrl); }catch(e){ console.warn('Participantes por URL falló', e);} }
+
+        // 2) Fallback a archivos locales subidos
+        if (!plan){ plan = await loadLocalFile(el('planFile')); }
+        if (!part){ part = await loadLocalFile(el('partFile')); }
+
+        if (!part) throw new Error('No se pudo cargar "Participantes". Sube el archivo o define una URL.');
+        DATA_PART = normalizeArray(part);
+        DATA_PLAN = normalizeArray(plan||[]);
+
+        // Autodetectar mapeo con la nueva data
+        applyMapping(true);
+      }catch(err){
+        alert(err.message);
+        console.error(err);
+      }
+    }
+
+    // Exportar CSV de participantes visibles
+    function exportCSV(){
+      if (!DATA_PART.length) return;
+      const cols = Object.keys(DATA_PART[0]);
+      const rows = [cols.join(';')];
+      for (const r of DATA_PART){
+        const line = cols.map(k=>String(r[k]??'').replace(/;/g,',')).join(';');
+        rows.push(line);
+      }
+      const blob = new Blob([rows.join('\n')], {type:'text/csv;charset=utf-8;'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'participantes_export.csv';
+      a.click();
+    }
+
+    // Eventos
+    el('btnCargar').addEventListener('click', cargar);
+    el('btnAplicar').addEventListener('click', ()=>applyMapping(false));
+    el('btnReset').addEventListener('click', ()=>{ MAP={curso:null,rut:null,estado:null,fecha:null}; applyMapping(true); });
+    el('txtBuscar').addEventListener('input', ()=>renderTabla());
+    el('btnExport').addEventListener('click', exportCSV);
+
+    // Valores por defecto (si el HTML vive al lado de los JSON en GitHub Pages)
+    el('planUrl').value = './Plan%20de%20capacitacion.json';
+    el('partUrl').value = './Participantes.json';
+  </script>
+</body>
+</html>
