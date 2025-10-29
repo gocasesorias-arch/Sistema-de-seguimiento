@@ -497,9 +497,9 @@
     el('txtBuscar').addEventListener('input', ()=>renderTabla());
     el('btnExport').addEventListener('click', exportCSV);
 
-    // Valores por defecto (si el HTML vive al lado de los JSON en GitHub Pages)
-    el('planUrl').value = './Plan%20de%20capacitacion.json';
-    el('partUrl').value = './Participantes.json';
+    // Valores por defecto (cargando desde GitHub main branch)
+    el('planUrl').value = 'https://raw.githubusercontent.com/gocasesorias-arch/Sistema-de-seguimiento/main/Plan%20de%20capacitacion.json';
+    el('partUrl').value = 'https://raw.githubusercontent.com/gocasesorias-arch/Sistema-de-seguimiento/main/Participantes.json';
   </script>
 </body>
 </html>
